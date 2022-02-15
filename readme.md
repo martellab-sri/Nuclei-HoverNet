@@ -10,7 +10,7 @@ conda activate hovernet
 pip install torch==1.6.0 torchvision==0.7.0
 ```
 ## 2. Some important scripts
-Below are the executable scripts that you'd better know at first:
+Below are the some scripts that you'd better know at first:
 
 1. ```config.py``` : main configuration file,  
  - model mode, number of nuclei types (N+1, 1 for background), training data directory, log directory, network input and output size, etc, can be set in ```config.py```. ```config.py``` will call another configuration file in ```./models/hovernet/opt.py```
@@ -20,16 +20,18 @@ Below are the executable scripts that you'd better know at first:
   - In the second stage, both encoder and three decoders will be trained for another 50 epochs.
   - Optimizer, learning rate, loss functions, batch size, training epochs, number of threads for dataloader, pre-trained model directory can be set in ```opt.py```.
 3. ```dataset.py```: defines the dataset classes. Load the original patch-level RGB images and its annotations. You can define your own dataset in this file.
-4. ```extract_patches.py```: extracts patches from original images. This script is used to make training and validation datasets. It takes patch-level images (e.g, 1000x1000 pixel) as input and crops them into smaller tiles (e.g, with size 540x540 pixel^2), and zip the cropped tile together with its annotations as a numpy array. 
+4. ```GenerateMasks.py``` :  Convert the manually annotated nucleus contours into a mask. Parse the ```.session.xml``` file of Sedeen Viewer, convert it into a mask, and save it as a dictionary file with keys: inst_map (for nuclei instance) and inst_type (for nuclei type).
+5. ```extract_patches.py```: extracts patches from original images. This script is used to make training and validation datasets. It takes patch-level images (e.g, 1000x1000 pixel) as input and crops them into smaller tiles (e.g, with size 540x540 pixel^2), and zip the cropped tile together with its annotations as a numpy array. 
   - For the numpy array, the first three channels save the image, and the rest several channel save its annotations.
-5. ```convert_format.py``` : Used to convert output (.json) to a format that can be used for visualisaton with QuPath. Note, this is only used for tile segmentation results; not WSI.
-6. ```type_info.json``` :  is used to specify what RGB colours are used in the overlay. Make sure to modify this for different datasets and if you would like to generally control overlay boundary colours.
-7. ```compute_stats.py```:  main metric computation script
-8. ```run_train.py```:  main training script
-9. ```run_infer.py```:  main inference script for tile and WSI processing
-10. ```convert_chkpt_tf2pytorch```: convert tensorflow .npz model trained in original repository to pytorch supported .tar format.
-11. ```run_tile.sh``` :  Script for inference on patch-level images.
-12. ```run_wsi.sh``` :  Script for inference on WSI.
+6. ```convert_format.py``` : Used to convert output (.json) to a format that can be used for visualisaton with QuPath. Note, this is only used for tile segmentation results; not WSI.
+7. ```type_info.json``` :  is used to specify what RGB colours are used in the overlay. Make sure to modify this for different datasets and if you would like to generally control overlay boundary colours.
+8. ```compute_stats.py```:  main metric computation script
+9. ```run_train.py```:  main training script
+10. ```run_infer.py```:  main inference script for tile and WSI processing
+11.  ```plot_heat_map.py```:  According to the inference results, parse the generated ```.json``` file and count the number of different types of nuclei. Draw a density map for WSIs and do hot spot analysis.
+12. ```convert_chkpt_tf2pytorch```: convert tensorflow .npz model trained in original repository to pytorch supported .tar format.
+13. ```run_tile.sh``` :  Script for inference on patch-level images.
+14. ```run_wsi.sh``` :  Script for inference on WSI.
 ## 3. Other main directories:
 1. ```dataloader/```: the data loader and augmentation pipeline
 2. ```metrics/```: scripts for metric calculation
@@ -37,22 +39,23 @@ Below are the executable scripts that you'd better know at first:
 4. ```models/```: model definition, along with the main run step and hyperparameter settings
 5. ```run_utils/```: defines the train/validation loop and callbacks
 ## 4. How to train your own model？
-The simple is we need three steps. First, prepare your training data. Then, train the model. Last, test the model with your test data. Next, I will take the instance segmenttaion in IHC-stained images as an example. 
+The simple answer is we need three steps. First, prepare your training data. Then, train the model. Last, test the model with your test data. Next, I will take the instance segmenttaion in IHC-stained images as an example. 
 
 ### 4.1 Prepare your own training data
-1. Crop predefined size patches from WSIs.
-2. Make annotations for patches. Suppose you use Sedeen Viewer to manually annotate nuclei contour. Then you'll use the Polygon tool to draw the nuclei contour, and use different colors to distinguish nuclei types. Finally, Sedeen Viewer will generate a ```.xml``` file.
-3. Use ```GenerateMasks.py``` to parse the ```.xml``` file and convert the contour annotations into pixel-level annotations (mask). Then make the annotation as a dict, with two keys as following. And last, save it as ```.mat``` file. 
-  'inst_map': instance map containing values from 0 to N, where N is the number of nuclei;
-  'inst_type': list of length N containing predictions for each nucleus.
+1. Crop predefined size patches from WSIs, e.g, the patch size is 1000x1000 pixels.
+2. Make annotations for patches. Suppose you use Sedeen Viewer to manually annotate nuclei contour. Then you'll use the Polygon tool to draw the nuclei contour, and use different colors to distinguish nuclei types. Finally, Sedeen Viewer will generate a ```session.xml``` file.
+3. Use ```GenerateMasks.py``` to parse the ```session.xml``` file and convert the contour annotations into pixel-level annotations (mask). Then make the annotation as a dict, with two keys as following. And last, save it as ```.mat``` file. 
+  - 'inst_map': instance map containing values from 0 to N, where N is the number of nuclei;
+  - 'inst_type': list of length N containing predictions for each nucleus.
 ### 4.2 Trian the model
 #### Before traning
 If your patches is bigger than 540 x 540 pixels, it must be extracted using ```extract_patches.py```. 
+- Set the input and output file addresses in ```extract_patches.py```. Remember, you need to call your ```dataset.py``` for image and annotation load.
 - For instance segmentation, patches are stored as a 4 dimensional numpy array with channels [RGB, inst_map]. Here, inst_map is the instance segmentation ground truth. I.e pixels range from 0 to N, where 0 is background and N is the number of nuclear instances for that particular image.
 - For simultaneous instance segmentation and classification, patches are stored as a 5 dimensional numpy array with channels [RGB, inst_map, inst_type]. Here, inst_type is the ground truth of the nuclear type. I.e every pixel ranges from 0-K, where 0 is background and K is the number of classes.
 
 Set paths and traning hyperparameters.
-  - Set path to the data directories in ```config.py```
+  - Set nr_type, model mode and path to the data directories in ```config.py```
   - Set path where checkpoints will be saved in ```config.py```
   - Set path to [pretrained Preact-ResNet50 weights](https://drive.google.com/file/d/1KntZge40tAHgyXmHYVqZZ5d2p_4Qr2l5/view) in ```models/hovernet/opt.py```. 
   -  Modify hyperparameters, including number of epochs and learning rate in ```models/hovernet/opt.py```.
